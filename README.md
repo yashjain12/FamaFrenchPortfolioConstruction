@@ -1,4 +1,4 @@
-## famafrench.ipynb
+## test/famafrench.ipynb
 
 This notebook serves as the **testing bed** for model comparison using the Fama-French 5-Factor framework.  
 The goal is to evaluate different statistical approaches for estimating alpha (unexplained returns) and beta (factor exposures) before moving on to an **actual portfolio construction** phase.
