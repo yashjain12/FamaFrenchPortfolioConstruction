@@ -1,3 +1,13 @@
+flowchart LR
+  A[Data\n• CRSP Daily (prices, vol)\n• CRSP Monthly (ETF returns)\n• Fama-French Factors (+Mom)] --> B[Prep\n• Align by month-end\n• Build excess returns R_t - RF_t\n• Daily→Monthly aggregation]
+  B --> C[Factor Model\n• Rolling OLS (baseline)\n• Time-varying α,β (state-space idea)\n• Outputs α_i,t and β_i,t]
+  C --> D[Regimes\n• K-means on {Mkt, 3m vol, 3m mom}\n• Regime dummies/offsets\n• “Trust alpha only in good regimes”]
+  D --> E[Signal\n• Map α_i,t → score_i,t (e.g., t-stat)\n• Cap per-asset weight (e.g., 35–50%)\n• Normalize to 100%]
+  E --> F[Trade Gate\n• Estimate per-ticker costs (Roll spread + commission)\n• Expected α gain vs. turnover cost\n• If gain > cost ⇒ trade]
+  F --> G[Execution\n• Decide at t (close)\n• Rebalance at t+1 (open)\n• Hold to t+1 (close)\n• Track PnL, turnover, exposures]
+  G --> H[Reports\n• Cumulative return\n• Turnover\n• Portfolio α_t and β_t\n• Per-asset weights over time]
+
+
 ## test/famafrench.ipynb
 
 This notebook serves as the **testing bed** for model comparison using the Fama-French 5-Factor framework.  
@@ -56,8 +66,6 @@ We implemented and compared three approaches:
 
      <img width="700" height="350" alt="image" src="https://github.com/user-attachments/assets/89e341a0-9e5e-49b5-bb37-1150bd5f8251" />
 
----
-
 ### Why Optimize for Alpha?
 While raw returns ($R_i - R_f$) can be maximized directly, they may be driven by **risk exposure** rather than true skill. For instance:  
 - A portfolio heavily tilted toward risky assets might show high returns on some days, but also large drawdowns on others.  
@@ -65,10 +73,87 @@ While raw returns ($R_i - R_f$) can be maximized directly, they may be driven by
 
 This ensures that any predictive power is not merely the result of taking more risk, but from identifying genuine sources of excess return.
 
----
-
 ### Next Steps
+
 Based on the results, we proceed with the **time-varying alpha and beta model with regime effects** for portfolio construction.  
 This approach provided the **closest resemblance to realized portfolio returns**, making it the most promising candidate for generating **daily alpha signals** that will drive portfolio weight adjustments. Just look at this amazing fit!
 <img width="750" height="375" alt="image" src="https://github.com/user-attachments/assets/37315d7e-13a3-4a99-bca5-ade520b07332" />
 
+---
+## src/AlphaSignal.ipynb
+This repository implements a factor-based portfolio strategy with time-varying alpha, beta, and regime adjustments.
+
+## Data
+
+- **CRSP Daily**: open/high/low/close & volume → used to proxy trading costs (effective spread) and to get month-first open and month-end close for execution.
+- **CRSP Monthly**: ETF returns (e.g., SPY/QQQ/IWM/EFA/TLT/EEM).
+- **Fama-French factors (+UMD)**: Mkt-RF, SMB, HML, RMW, CMA, UMD and RF.
+***
+## Prep
+
+- Align everything to month-end.
+- Compute excess returns: $r_t(i) - RF_t$.
+- Aggregate daily factors to monthly (proper compounding for returns; averages for rates if applicable).
+
+## Factor model (alpha/beta)
+
+- **Baseline**: rolling OLS on the 5-factor (+mom) model.
+- **Enhanced**: time-varying $\\alpha$ and $\\beta$ (state-space style / random-walk $\\alpha$), optionally with regime dummies.
+
+Output per asset $i$ each month $t$:
+- $\\alpha_{i,t}$: abnormal return beyond risk-free and factors (i.e., the part a factor investor couldn’t explain).
+- $\\beta_{i,t}^f$: exposure to factor $f$.
+
+*Quick note*: alpha $\\neq$ risk-free. Alpha is the residual expected excess return after accounting for factors.
+
+## Regimes
+
+- Cluster monthly market states with K-means using:
+  - Mkt (market excess return),
+  - vol3 (3-month rolling std of Mkt),
+  - mom3 (3-month sum of Mkt).
+
+- Use regime labels to (i) include regime offsets in $\\alpha$, or (ii) down-weight “bad” regimes when mapping $\\alpha \\to$ weights.
+
+## Signal: map alpha → target weights
+
+- Score each asset: e.g., $s_{i,t} = \\max(0, \\alpha_{i,t} / SE[\\alpha_{i,t}])$ (long-only example).
+- Normalize scores to weights with a per-asset cap (e.g., 35–50%) and simplex projection so weights sum to 1.
+
+## Trade gate (cost-aware)
+
+- Per-ticker cost (bps) from CRSP daily via Roll’s effective spread:
+
+$$\\text{Roll spread} \\approx 2\\sqrt{-Cov(r_t, r_{t-1})}$$
+
+$$\\text{per-side bps} \\approx \\tfrac{1}{2} \\cdot \\text{spread} \\times 10{,}000 + \\text{commission bps}$$
+
+- Compute expected alpha gain from moving weights vs. turnover cost:
+
+$$\\sum_i \\Delta w_{i,t}\\, \\alpha_{i,t} \\; >? \\; \\sum_i |\\Delta w_{i,t}| \\cdot cost_i \\; (\\text{in return units})$$
+
+- Only trade when gain > cost (optionally add a small margin).
+
+## Execution model
+
+- Decide at $t$ close (no look-ahead).
+- Rebalance at $t+1$ open, pay costs, hold to $t+1$ close.
+- Record turnover, weights realized, PnL, portfolio $\\alpha_t$ and $\\beta_t$ (weight-averages).
+
+## Outputs you’ll see
+
+- Cumulative return (net of costs) and turnover time series.
+- Weights over time per ETF (stacked or line plot).
+- Portfolio alpha over time: $\\alpha_{p,t} = \\sum_i w_{i,t}\\, \\alpha_{i,t}$.
+- Portfolio factor betas over time: $\\beta_{p,t}^f = \\sum_i w_{i,t}\\, \\beta_{i,t}^f$.
+- Annualized stats: return, volatility, Sharpe; optional real (inflation-adjusted) return if CPI is added.
+
+## “How do I run this?”
+
+1. Download `DailyData.csv`, `monthlyData.csv`, `FactorData.csv` in `/src`.
+2. Run the notebook/script:
+   - Build alpha/beta per asset (rolling OLS / time-varying).
+   - Cluster regimes (K-means on market features).
+   - Map alpha → weights (with caps).
+   - Trade at next open, gate by costs.
+   - Plot results (cumulative return, weights, exposures).
