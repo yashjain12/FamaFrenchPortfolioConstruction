@@ -1,12 +1,4 @@
-flowchart LR
-  A[Data\n• CRSP Daily (prices, vol)\n• CRSP Monthly (ETF returns)\n• Fama-French Factors (+Mom)] --> B[Prep\n• Align by month-end\n• Build excess returns R_t - RF_t\n• Daily→Monthly aggregation]
-  B --> C[Factor Model\n• Rolling OLS (baseline)\n• Time-varying α,β (state-space idea)\n• Outputs α_i,t and β_i,t]
-  C --> D[Regimes\n• K-means on {Mkt, 3m vol, 3m mom}\n• Regime dummies/offsets\n• “Trust alpha only in good regimes”]
-  D --> E[Signal\n• Map α_i,t → score_i,t (e.g., t-stat)\n• Cap per-asset weight (e.g., 35–50%)\n• Normalize to 100%]
-  E --> F[Trade Gate\n• Estimate per-ticker costs (Roll spread + commission)\n• Expected α gain vs. turnover cost\n• If gain > cost ⇒ trade]
-  F --> G[Execution\n• Decide at t (close)\n• Rebalance at t+1 (open)\n• Hold to t+1 (close)\n• Track PnL, turnover, exposures]
-  G --> H[Reports\n• Cumulative return\n• Turnover\n• Portfolio α_t and β_t\n• Per-asset weights over time]
-
+<img width="1837" height="523" alt="image" src="https://github.com/user-attachments/assets/31afee14-b0f1-4519-ba7a-4d7f508fee83" />
 
 ## test/famafrench.ipynb
 
